@@ -174,6 +174,10 @@ Example detection logic:
 
 - Detect repeated authentication failures across instances
 
+## Honeynet Automated Threat Response
+Here is the folder that has the [automated blocking ip](/automation/README.md)
+
+<img width="1107" height="727" alt="image" src="https://github.com/user-attachments/assets/c8e89851-6581-49a2-b351-c96c3737df25" />
 
 ## Incident Investigation Process
 
