@@ -134,7 +134,6 @@ python automation.py
 ## Potential Improvements
 
 - Schedule the script to run automatically using AWS Lambda + EventBridge (cron)
-- Add RDP log parsing for the Windows honeypot (Event ID 4625)
 - Export blocked IPs to an S3 bucket as a running threat log
 - Add IP enrichment using AbuseIPDB or VirusTotal API to include threat intel in the Slack alert
 - Build a simple dashboard using CloudWatch metrics to visualize attack trends over time
