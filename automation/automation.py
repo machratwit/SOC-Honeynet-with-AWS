@@ -7,7 +7,7 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-
+# LOG_GROUP_NAME = "windows-security-logs"
 LOG_GROUP_NAME = "linux-auth-logs"
 SECURITY_GROUP_ID = os.getenv("SECURITY_GROUP_ID")
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
@@ -38,6 +38,7 @@ def get_failed_logins():
             "startTime": start_ms,
             "endTime": end_ms,
             "filterPattern": "Failed password"
+            # "filterPattern": "4625",
         }
 
         if next_token:
@@ -60,6 +61,7 @@ def parse_ips(log_events):
     ip_counts = defaultdict(int)
 
     ip_pattern = re.compile(r"from (\d+\.\d+\.\d+\.\d+)")
+    # ip_pattern = re.compile(r"Source Network Address:\s+(\d+\.\d+\.\d+\.\d+)")
 
     for event in log_events:
         match = ip_pattern.search(event["message"])
