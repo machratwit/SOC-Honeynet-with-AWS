@@ -7,20 +7,36 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-# LOG_GROUP_NAME = "windows-security-logs"
-LOG_GROUP_NAME = "linux-auth-logs"
+
 SECURITY_GROUP_ID = os.getenv("SECURITY_GROUP_ID")
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
 AWS_REGION = os.getenv("AWS_REGION")
 NACL_ID = os.getenv("NACL_ID")
+
 BRUTE_FORCE_THRESHOLD = 5
 LOOKBACK_MINUTES = 30240
 
+LOG_SOURCE = [
+    {
+        "name": "Linux SSH",
+        "log_group": "linux-auth-logs",
+        "filter_pattern": "Failed password",
+        "ip_regex": re.compile(r"from (\d+\.\d+\.\d+\.\d+)")
+    },
+    {
+        "name": "Windows RDP",
+        "log_group": "windows-security-logs",
+        "filter_pattern": "4625",
+        "ip_regex": re.compile(r"Source Network Address:\s+(\d+\.\d+\.\d+\.\d+)")
+
+    }
+]
+
 
 # ==============================
-# Pull logs from CloudWatch
+# STEP 1: Pull logs from CloudWatch
 # ==============================
-def get_failed_logins():
+def get_failed_logins(log_group, filer_pattern):
     client = boto3.client("logs", region_name=AWS_REGION)
 
     end_time = datetime.now(timezone.utc)
@@ -34,11 +50,10 @@ def get_failed_logins():
 
     while True:
         kwargs = {
-            "logGroupName": LOG_GROUP_NAME,
+            "logGroupName": log_group,
             "startTime": start_ms,
             "endTime": end_ms,
-            "filterPattern": "Failed password"
-            # "filterPattern": "4625",
+            "filterPattern": filer_pattern,
         }
 
         if next_token:
@@ -55,16 +70,13 @@ def get_failed_logins():
 
 
 # ==============================
-# Parse IPs from log lines
+# STEP 2: Parse IPs from log lines
 # ==============================
-def parse_ips(log_events):
+def parse_ips(log_events, ip_regex):
     ip_counts = defaultdict(int)
 
-    ip_pattern = re.compile(r"from (\d+\.\d+\.\d+\.\d+)")
-    # ip_pattern = re.compile(r"Source Network Address:\s+(\d+\.\d+\.\d+\.\d+)")
-
     for event in log_events:
-        match = ip_pattern.search(event["message"])
+        match = ip_regex.search(event["message"])
         if match:
             ip = match.group(1)
             ip_counts[ip] += 1
@@ -73,9 +85,8 @@ def parse_ips(log_events):
 
 
 # ==============================
-# Block IP in security group
+# STEP 3: Block IP in security group
 # ==============================
-
 def get_already_blocked_ips(nacl_id):
     ec2 = boto3.client("ec2", region_name=AWS_REGION)
     response = ec2.describe_network_acls(NetworkAclIds=[nacl_id])
@@ -133,13 +144,14 @@ def block_ip(ip_address):
 
 
 # ==============================
-# Send Slack alert
+# STEP 4: Send Slack alert
 # ==============================
-def send_slack_alert(ip_address, count, blocked):
+def send_slack_alert(ip_address, count, blocked, source_name):
     action_text = "Blocked via NACL" if blocked else "Block attempt failed — check logs"
     message = {
         "text": (
             f":rotating_light: *Brute Force Detected!*\n"
+            f"*Source:* {source_name}\n"
             f"*IP Address:* `{ip_address}`\n"
             f"*Failed Attempts:* {count} in last {LOOKBACK_MINUTES} minutes\n"
             f"*Action Taken:* {action_text}\n"
@@ -158,42 +170,32 @@ def send_slack_alert(ip_address, count, blocked):
         print(
             f"[ERROR] Slack alert failed with status {response.status_code}: {response.text}")
 
-def main():
-    print("=" * 40)
-    print("Honeynet Automated Response Monitor")
-    print("=" * 40)
 
-    if not NACL_ID or not SLACK_WEBHOOK_URL:
-        print(
-            "[ERROR] Missing required environment variables. Check NACL_ID and SLACK_WEBHOOK_URL.")
+def process_source(source, already_blocked):
+    print(f"\n" + "-" * 40)
+    print(f"  [{source['name']}] Pulling CloudWatch Logs")
+    print("-" * 40)
+
+    try:
+        events = get_failed_logins(
+            source["log_group"], source["filter_pattern"])
+    except Exception as e:
+        print(f"  Could not fetch logs: {e}")
         return
 
-    print("\n" + "-" * 40)
-    print("  Pulling CloudWatch Logs")
-    print("-" * 40)
-    events = get_failed_logins()
-    print(f"Found {len(events)} failed login events")
+    print(f"  Events found: {len(events)}")
 
     if not events:
-        print("No failed logins found. All clear.")
+        print("  No failed logins found. All clear.")
         return
 
-    ip_counts = parse_ips(events)
-    print(f"Unique IPs seen: {list(ip_counts.keys())}")
+    ip_counts = parse_ips(events, source["ip_regex"])
+    print(f"  Unique IPs seen: {list(ip_counts.keys())}")
 
-    print("\n" + "-" * 40)
-    print("  Already Blocked IPs in NACL")
+    print(f"\n" + "-" * 40)
+    print(f"  [{source['name']}] Evaluating IPs Against Threshold")
     print("-" * 40)
-    already_blocked = get_already_blocked_ips(NACL_ID)
-    if already_blocked:
-        for blocked_ip in sorted(already_blocked):
-            print(f"[!] {blocked_ip}")
-    else:
-        print("  (none)")
 
-    print("\n" + "-" * 40)
-    print("  Evaluating IPs Against Threshold")
-    print("-" * 40)
     for ip, count in sorted(ip_counts.items(), key=lambda x: x[1], reverse=True):
         print(f"\n  IP: {ip}")
         print(f"  Attempts: {count}")
@@ -205,10 +207,39 @@ def main():
             print(
                 f"  Status:  Threshold hit ({BRUTE_FORCE_THRESHOLD}+) — taking action")
             blocked = block_ip(ip)
-            send_slack_alert(ip, count, blocked)
+            send_slack_alert(ip, count, blocked, source["name"])
 
         else:
             print(f"  Status: Below threshold — monitoring")
+
+# ==============================
+# MAIN — runs everything
+# ==============================
+
+
+def main():
+    print("=" * 40)
+    print("Honeynet Automated Response Monitor")
+    print("=" * 40)
+
+    if not NACL_ID or not SLACK_WEBHOOK_URL:
+        print(
+            "[ERROR] Missing required environment variables. Check NACL_ID and SLACK_WEBHOOK_URL.")
+        return
+
+    print("\n" + "-" * 40)
+    print("  Already Blocked IPs in NACL")
+    print("-" * 40)
+    already_blocked = get_already_blocked_ips(NACL_ID)
+
+    if already_blocked:
+        for blocked_ip in sorted(already_blocked):
+            print(f"[!] {blocked_ip}")
+    else:
+        print("  (none)")
+
+    for source in LOG_SOURCE:
+        process_source(source, already_blocked)
 
     print("\n" + "=" * 40)
     print("  Scan Complete")
@@ -217,4 +248,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
