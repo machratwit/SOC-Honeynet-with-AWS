@@ -105,10 +105,11 @@ python automation.py
 
 ### Script Running in Terminal
 <img width="1107" height="727" alt="image" src="https://github.com/user-attachments/assets/c8e89851-6581-49a2-b351-c96c3737df25" />
+<img width="616" height="872" alt="image" src="https://github.com/user-attachments/assets/4bd24675-3260-403a-abe2-9e34d4ad7ab4" />
 <img width="402" height="373" alt="image" src="https://github.com/user-attachments/assets/372a49b4-3937-444b-9902-30f6a8360657" />
 
 ### Skipping over already blocked IPs
-<img width="317" height="840" alt="image" src="https://github.com/user-attachments/assets/93143ebb-3362-40c9-a13d-3e32172d282d" />
+<img width="659" height="816" alt="image" src="https://github.com/user-attachments/assets/8f6229d6-5f89-4442-9009-98e17039389e" />
 
 ### NACL After Running the Script
 <img width="1450" height="406" alt="image" src="https://github.com/user-attachments/assets/cf53bfa4-0f68-4d3d-87ba-ea0ed8181b6b" />
