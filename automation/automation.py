@@ -15,6 +15,8 @@ NACL_ID = os.getenv("NACL_ID")
 
 BRUTE_FORCE_THRESHOLD = 5
 LOOKBACK_MINUTES = 30240
+SCAN_START = datetime(2026, 1, 25, 0,  0,  tzinfo=timezone.utc)
+SCAN_END = datetime(2026, 2,  7, 23, 59, tzinfo=timezone.utc)
 
 LOG_SOURCE = [
     {
@@ -39,11 +41,8 @@ LOG_SOURCE = [
 def get_failed_logins(log_group, filer_pattern):
     client = boto3.client("logs", region_name=AWS_REGION)
 
-    end_time = datetime.now(timezone.utc)
-    start_time = end_time - timedelta(minutes=LOOKBACK_MINUTES)
-
-    start_ms = int(start_time.timestamp() * 1000)
-    end_ms = int(end_time.timestamp() * 1000)
+    start_ms = int(SCAN_START.timestamp() * 1000)
+    end_ms = int(SCAN_END.timestamp() * 1000)
 
     events = []
     next_token = None
@@ -133,7 +132,7 @@ def block_ip(ip_address):
             RuleAction="deny",
             Egress=False,
             CidrBlock=f"{ip_address}/32",
-            PortRange={"From": 22, "To": 22}
+            PortRange={"From": 0, "To": 65535}
         )
         print(
             f"[BLOCKED] {ip_address} → NACL deny rule #{rule_number} created")
