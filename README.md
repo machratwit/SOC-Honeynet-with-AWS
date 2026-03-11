@@ -4,7 +4,7 @@
 
 This project demonstrates how I designed and deployed a small-scale Security Operations Center environment inside AWS using a deliberately exposed honeynet. The purpose was to simulate real-world attacker activity, collect telemetry, detect threats, and perform investigations using native cloud security tooling.
 
-This lab mirrors real SOC workflows including monitoring, detection engineering, incident investigation, and environment hardening.
+This lab mirrors real SOC workflows including monitoring, detection engineering, incident investigation, automated response, and environment hardening.
 
 ## Objectives
 
@@ -13,6 +13,8 @@ This lab mirrors real SOC workflows including monitoring, detection engineering,
 - Centralize logs for analysis
 
 - Detect suspicious behavior using native threat detection
+
+- Automate threat response using serverless infrastructure
 
 - Investigate findings like a SOC analyst
 
@@ -35,6 +37,12 @@ Components:
 - CloudWatch Logs
 
 - GuardDuty threat detection
+
+- Python automation (boto3) for log analysis and IP blocking
+  
+- AWS Lambda for serverless automated response
+  
+- EventBridge Scheduler for recurring execution every 30 minutes
 
 ## VPC Configuration
 
@@ -175,7 +183,27 @@ Example detection logic:
 - Detect repeated authentication failures across instances
 
 ## Honeynet Automated Threat Response
-Here is the folder that has the [automated blocking ip](/automation/README.md)
+
+To move beyond manual detection, I built a Python automation pipeline deployed as a serverless AWS Lambda function that runs every 30 minutes.
+
+**How it works:**
+
+1. Lambda queries CloudWatch Logs for recent SSH and RDP failed login attempts
+2. Parses attacker IPs using regex from Linux auth logs and Windows Event ID 4625 entries
+3. Counts failed attempts per IP using a threshold-based approach
+4. Compares offending IPs against existing NACL rules to avoid duplicates
+5. Automatically adds DENY rules to the subnet-level NACL to block attackers
+6. Sends a Slack alert summarizing blocked IPs and attempt counts
+
+**Why NACL over Security Groups:**
+
+Network ACLs support true DENY rules at the subnet level, making them the correct control for blocking known malicious IPs. Security Groups are stateful allow-only controls and cannot explicitly deny traffic.
+
+**Scheduling:**
+
+EventBridge Scheduler triggers the Lambda function every 30 minutes automatically. The lookback window is set to 35 minutes to provide overlap between runs and prevent missed events.
+
+See the [automation folder](./automation/) for full source code, deployment instructions, and environment variable setup.
 
 <img width="1107" height="727" alt="image" src="https://github.com/user-attachments/assets/c8e89851-6581-49a2-b351-c96c3737df25" />
 
@@ -218,6 +246,12 @@ Changes:
 - Incident response
 
 - Network monitoring
+
+- Python automation with boto3
+  
+- Serverless deployment (AWS Lambda)
+
+- Event-driven scheduling (EventBridge)
 
 - Security hardening
 
