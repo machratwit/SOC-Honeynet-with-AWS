@@ -41,6 +41,15 @@ Security groups in AWS are **allow-only** — you can permit traffic but you can
 
 ---
 
+## Files
+
+| File | Description |
+|---|---|
+| `automation.py` | Manual version — run locally against a fixed date range |
+| `lambda_function.py` | Lambda version — deployed to AWS and triggered on a schedule |
+
+---
+
 ## Prerequisites
 
 - Python 3.8+
@@ -92,6 +101,71 @@ export AWS_REGION="us-east-1"
 ```bash
 python automation.py
 ```
+
+---
+
+# Deploying to AWS Lambda
+
+To run this automation continuously without keeping a local machine running, the script is deployed as a serverless AWS Lambda function and triggered every 30 minutes by EventBridge Scheduler.
+
+### Step 1 — Package the Lambda function
+
+```bash
+mkdir lambda_package
+pip install boto3 requests -t lambda_package/
+cp lambda_function.py lambda_package/
+cd lambda_package
+python -m zipfile -c ../honeynet_lambda.zip .
+```
+
+> Use `python -m zipfile` on Windows. The `zip -r` command is Linux/Mac only.
+
+### Step 2 — Create the Lambda function in AWS
+
+- Go to **AWS Lambda → Create function**
+- Runtime: **Python 3.12**
+- Handler: `lambda_function.lambda_handler`
+- Upload `honeynet_lambda.zip`
+- Set timeout to **1 minute** (the default 3 seconds is too short for CloudWatch queries)
+
+### Step 3 — Set environment variables
+
+In Lambda → Configuration → Environment variables, add:
+
+| Variable | Description |
+|---|---|
+| `SLACK_WEBHOOK_URL` | Your Slack incoming webhook URL |
+| `NACL_ID` | Your subnet Network ACL ID (format: `acl-xxxxxxxx`) |
+| `SECURITY_GROUP_ID` | Your honeypot security group ID |
+| `AWS_REGION` | Region your resources are in (e.g. `us-east-1`) |
+| `BRUTE_FORCE_THRESHOLD` | Failed attempt count before blocking (e.g. `5`) |
+| `LOOKBACK_MINUTES` | How far back to query logs (set to `35`) |
+
+### Step 4 — Attach IAM permissions
+
+The Lambda execution role needs:
+
+- `CloudWatchLogsReadOnlyAccess` — to query log groups
+- `AmazonEC2FullAccess` — to modify NACL rules
+
+### Step 5 — Schedule with EventBridge Scheduler
+
+- Go to **Amazon EventBridge → Scheduler → Create schedule**
+- Schedule type: Rate-based → `rate(30 minutes)`
+- Target: AWS Lambda → Invoke → select your function
+- Create a new IAM role for the scheduler during setup
+
+> EventBridge Scheduler is a separate service from EventBridge Rules. Look for **Scheduler** in the left sidebar, not Rules.
+
+`LOOKBACK_MINUTES` is set to 35 (slightly more than the 30-minute interval) to ensure overlap between runs so no log entries get missed.
+
+### Step 6 — Verify execution
+
+After the first scheduled run, go to:
+
+**CloudWatch → Log groups → /aws/lambda/honeynet-monitor**
+
+You should see execution logs confirming the script ran, IPs scanned, and any blocks applied.
 
 ---
 
